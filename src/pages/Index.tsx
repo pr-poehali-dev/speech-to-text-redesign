@@ -1,17 +1,35 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState } from 'react';
+import Navbar from '@/components/Navbar';
+import HeroSection from '@/components/HeroSection';
+import DemoSection from '@/components/DemoSection';
+import FeaturesSection from '@/components/FeaturesSection';
+import PricingSection from '@/components/PricingSection';
+import ApiSection from '@/components/ApiSection';
+import ContactSection from '@/components/ContactSection';
+import Footer from '@/components/Footer';
+import AuthModal from '@/components/AuthModal';
 
-const Index = () => {
+export default function Index() {
+  const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null);
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4 color-black text-black">Добро пожаловать!</h1>
-        <p className="text-xl text-gray-600">тут будет отображаться ваш проект</p>
-      </div>
-      <span className="absolute bottom-8 left-1/2 -translate-x-1/2 inline-block bg-[#FF6637] text-white text-sm px-4 py-2 rounded-full whitespace-nowrap">
-        Подождите 5 минут, Юра создает первую версию проекта с нуля
-      </span>
+    <div className="min-h-screen bg-[#060a0f] text-white">
+      <Navbar onAuthOpen={setAuthMode} />
+      <HeroSection onAuthOpen={setAuthMode} />
+      <DemoSection />
+      <FeaturesSection />
+      <PricingSection />
+      <ApiSection />
+      <ContactSection />
+      <Footer />
+
+      {authMode && (
+        <AuthModal
+          mode={authMode}
+          onClose={() => setAuthMode(null)}
+          onModeSwitch={setAuthMode}
+        />
+      )}
     </div>
   );
-};
-
-export default Index;
+}
