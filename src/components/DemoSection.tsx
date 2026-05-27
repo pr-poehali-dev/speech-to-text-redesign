@@ -13,6 +13,22 @@ export default function DemoSection() {
   const [result, setResult] = useState('');
   const [demoIdx, setDemoIdx] = useState(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadedFile, setUploadedFile] = useState<string | null>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadedFile(file.name);
+    setResult('');
+    setIsProcessing(true);
+    timerRef.current = setTimeout(() => {
+      setIsProcessing(false);
+      setResult(DEMO_TEXTS[demoIdx % DEMO_TEXTS.length]);
+      setDemoIdx(i => i + 1);
+    }, 2200);
+    e.target.value = '';
+  };
 
   const handleRecord = () => {
     if (isRecording) {
@@ -165,9 +181,19 @@ export default function DemoSection() {
             <span className="text-xs font-mono text-[rgba(255,255,255,0.3)]">или</span>
             <div className="flex-1 h-px bg-[rgba(255,255,255,0.06)]" />
           </div>
-          <button className="mt-4 w-full py-3 rounded-xl border border-dashed border-[rgba(0,210,255,0.2)] text-[rgba(0,210,255,0.5)] hover:border-[rgba(0,210,255,0.4)] hover:text-[#00d2ff] transition-all font-ibm text-sm flex items-center justify-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*,video/*,.mp3,.mp4,.wav,.ogg,.m4a,.webm,.flac"
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="mt-4 w-full py-3 rounded-xl border border-dashed border-[rgba(0,210,255,0.2)] text-[rgba(0,210,255,0.5)] hover:border-[rgba(0,210,255,0.4)] hover:text-[#00d2ff] transition-all font-ibm text-sm flex items-center justify-center gap-2"
+          >
             <Icon name="Upload" size={16} />
-            Загрузить аудио / видео файл
+            {uploadedFile ? uploadedFile : 'Загрузить аудио / видео файл'}
           </button>
         </div>
       </div>
