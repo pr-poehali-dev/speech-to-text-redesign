@@ -1,47 +1,87 @@
 import { useState, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 
-const DEMO_TEXTS = [
-  'Искусственный интеллект трансформирует способ взаимодействия человека с технологиями. Голосовые интерфейсы становятся новой нормой.',
-  'Наша нейросеть распознаёт речь с точностью 99% даже в условиях шума. Поддерживает более 50 языков и диалектов.',
-  'Встреча прошла продуктивно. Обсудили квартальные результаты, поставили задачи на следующий спринт, согласовали бюджет.',
-];
+const API_URL = 'https://functions.poehali.dev/b41f3a3a-76c2-4653-a7d9-78caee93ab75';
 
 export default function DemoSection() {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState('');
-  const [demoIdx, setDemoIdx] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [resultMeta, setResultMeta] = useState<{ language?: string; elapsed?: number; duration?: number } | null>(null);
+  const [error, setError] = useState('');
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  const transcribeBlob = async (blob: Blob, filename: string) => {
+    setIsProcessing(true);
+    setResult('');
+    setError('');
+    setResultMeta(null);
+
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      let binary = '';
+      uint8.forEach(b => { binary += String.fromCharCode(b); });
+      const b64 = btoa(binary);
+
+      const resp = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file: b64, filename, language: 'ru' }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        setError(data.error || 'Ошибка сервера');
+      } else {
+        setResult(data.text || '');
+        setResultMeta({ language: data.language, elapsed: data.elapsed, duration: data.duration });
+      }
+    } catch {
+      setError('Не удалось связаться с сервером. Проверьте интернет-соединение.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadedFile(file.name);
-    setResult('');
-    setIsProcessing(true);
-    timerRef.current = setTimeout(() => {
-      setIsProcessing(false);
-      setResult(DEMO_TEXTS[demoIdx % DEMO_TEXTS.length]);
-      setDemoIdx(i => i + 1);
-    }, 2200);
     e.target.value = '';
+    await transcribeBlob(file, file.name);
   };
 
-  const handleRecord = () => {
+  const handleRecord = async () => {
     if (isRecording) {
+      // Останавливаем запись
+      mediaRecorderRef.current?.stop();
       setIsRecording(false);
-      setIsProcessing(true);
-      timerRef.current = setTimeout(() => {
-        setIsProcessing(false);
-        setResult(DEMO_TEXTS[demoIdx % DEMO_TEXTS.length]);
-        setDemoIdx(i => i + 1);
-      }, 1800);
     } else {
       setResult('');
-      setIsRecording(true);
+      setError('');
+      setUploadedFile(null);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mr = new MediaRecorder(stream);
+        chunksRef.current = [];
+        mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+        mr.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop());
+          const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          await transcribeBlob(blob, 'recording.webm');
+        };
+        mr.start();
+        mediaRecorderRef.current = mr;
+        setIsRecording(true);
+      } catch {
+        setError('Нет доступа к микрофону. Разрешите доступ в браузере.');
+      }
     }
   };
 
@@ -51,7 +91,6 @@ export default function DemoSection() {
 
   return (
     <section id="demo" className="relative py-32 overflow-hidden">
-      {/* bg */}
       <div className="absolute inset-0 bg-grid opacity-50" />
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-px bg-gradient-to-r from-transparent via-[rgba(0,210,255,0.2)] to-transparent" />
 
@@ -67,13 +106,12 @@ export default function DemoSection() {
             ПОПРОБУЙ ПРЯМО СЕЙЧАС
           </h2>
           <p className="font-ibm text-[rgba(255,255,255,0.5)] text-lg">
-            Нажми кнопку и начни говорить. Наша нейросеть распознает речь в реальном времени.
+            Запиши голос или загрузи аудио/видео файл — Whisper распознает речь точно и быстро.
           </p>
         </div>
 
         {/* Demo card */}
-        <div className="relative neon-border glass rounded-2xl p-8 corner-tl corner-br">
-          {/* Corner decorations */}
+        <div className="relative neon-border glass rounded-2xl p-8">
           <div className="absolute top-0 left-0 w-5 h-5 border-t-2 border-l-2 border-[rgba(0,210,255,0.6)] rounded-tl-lg" />
           <div className="absolute bottom-0 right-0 w-5 h-5 border-b-2 border-r-2 border-[rgba(0,210,255,0.6)] rounded-br-lg" />
 
@@ -83,20 +121,20 @@ export default function DemoSection() {
               <div
                 key={i}
                 className={`wave-bar rounded-full transition-all duration-300 ${
-                  isRecording
+                  isRecording || isProcessing
                     ? 'bg-gradient-to-t from-[#00d2ff] to-[#7b2fff]'
                     : 'bg-[rgba(255,255,255,0.1)]'
                 }`}
                 style={{
                   width: '6px',
-                  height: isRecording ? undefined : '4px',
-                  animationPlayState: isRecording ? 'running' : 'paused',
+                  height: isRecording || isProcessing ? undefined : '4px',
+                  animationPlayState: isRecording || isProcessing ? 'running' : 'paused',
                 }}
               />
             ))}
           </div>
 
-          {/* Status */}
+          {/* Status badge */}
           <div className="text-center mb-6">
             <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-mono ${
               isRecording
@@ -108,15 +146,16 @@ export default function DemoSection() {
               {isRecording && <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />}
               {isProcessing && <Icon name="Loader" size={14} className="animate-spin" />}
               {!isRecording && !isProcessing && <Icon name="Mic" size={14} />}
-              {isRecording ? 'ЗАПИСЬ...' : isProcessing ? 'ОБРАБОТКА...' : 'ГОТОВ К ЗАПИСИ'}
+              {isRecording ? 'ЗАПИСЬ...' : isProcessing ? 'ОТПРАВЛЯЮ В WHISPER...' : 'ГОТОВ К ЗАПИСИ'}
             </div>
           </div>
 
-          {/* Big record button */}
+          {/* Record button */}
           <div className="flex justify-center mb-8">
             <button
               onClick={handleRecord}
-              className={`relative w-24 h-24 rounded-full transition-all duration-300 flex items-center justify-center ${
+              disabled={isProcessing}
+              className={`relative w-24 h-24 rounded-full transition-all duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed ${
                 isRecording
                   ? 'bg-red-500 shadow-[0_0_40px_rgba(255,80,80,0.6)]'
                   : 'bg-gradient-to-br from-[#00d2ff] to-[#7b2fff] btn-glow'
@@ -141,13 +180,21 @@ export default function DemoSection() {
             {isProcessing && (
               <div className="flex items-center gap-3 text-[rgba(0,210,255,0.6)]">
                 <div className="flex gap-1">
-                  {[0,1,2].map(i => (
+                  {[0, 1, 2].map(i => (
                     <div key={i} className="w-2 h-2 rounded-full bg-[#00d2ff] animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                   ))}
                 </div>
-                <span className="font-mono text-sm">Нейросеть анализирует...</span>
+                <span className="font-mono text-sm">Whisper анализирует речь...</span>
               </div>
             )}
+
+            {error && !isProcessing && (
+              <div className="flex items-start gap-3 text-red-400">
+                <Icon name="AlertCircle" size={16} className="mt-0.5 flex-shrink-0" />
+                <p className="font-ibm text-sm">{error}</p>
+              </div>
+            )}
+
             {result && !isProcessing && (
               <div>
                 <div className="flex items-start justify-between gap-4">
@@ -161,21 +208,34 @@ export default function DemoSection() {
                     <Icon name="Copy" size={16} />
                   </button>
                 </div>
-                <div className="mt-4 pt-4 border-t border-[rgba(255,255,255,0.06)] flex items-center gap-6 text-xs font-mono text-[rgba(255,255,255,0.3)]">
-                  <span>ТОЧНОСТЬ: <span className="text-[#00d2ff]">99.2%</span></span>
-                  <span>ЯЗЫК: <span className="text-[#00d2ff]">RU</span></span>
-                  <span>ВРЕМЯ: <span className="text-[#00d2ff]">0.31с</span></span>
-                </div>
+                {resultMeta && (
+                  <div className="mt-4 pt-4 border-t border-[rgba(255,255,255,0.06)] flex flex-wrap items-center gap-6 text-xs font-mono text-[rgba(255,255,255,0.3)]">
+                    {resultMeta.language && (
+                      <span>ЯЗЫК: <span className="text-[#00d2ff]">{resultMeta.language.toUpperCase()}</span></span>
+                    )}
+                    {resultMeta.duration && (
+                      <span>ДЛИНА: <span className="text-[#00d2ff]">{Math.round(resultMeta.duration)}с</span></span>
+                    )}
+                    {resultMeta.elapsed && (
+                      <span>ВРЕМЯ ОБРАБОТКИ: <span className="text-[#00d2ff]">{resultMeta.elapsed}с</span></span>
+                    )}
+                    <span className="flex items-center gap-1 text-[#00ff99]">
+                      <Icon name="Check" size={11} />
+                      WHISPER AI
+                    </span>
+                  </div>
+                )}
               </div>
             )}
-            {!result && !isProcessing && (
+
+            {!result && !isProcessing && !error && (
               <p className="text-[rgba(255,255,255,0.2)] font-ibm text-center mt-6">
                 Результат распознавания появится здесь...
               </p>
             )}
           </div>
 
-          {/* Upload alternative */}
+          {/* Upload */}
           <div className="mt-6 flex items-center gap-4">
             <div className="flex-1 h-px bg-[rgba(255,255,255,0.06)]" />
             <span className="text-xs font-mono text-[rgba(255,255,255,0.3)]">или</span>
@@ -190,10 +250,11 @@ export default function DemoSection() {
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="mt-4 w-full py-3 rounded-xl border border-dashed border-[rgba(0,210,255,0.2)] text-[rgba(0,210,255,0.5)] hover:border-[rgba(0,210,255,0.4)] hover:text-[#00d2ff] transition-all font-ibm text-sm flex items-center justify-center gap-2"
+            disabled={isProcessing || isRecording}
+            className="mt-4 w-full py-3 rounded-xl border border-dashed border-[rgba(0,210,255,0.2)] text-[rgba(0,210,255,0.5)] hover:border-[rgba(0,210,255,0.4)] hover:text-[#00d2ff] transition-all font-ibm text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Icon name="Upload" size={16} />
-            {uploadedFile ? uploadedFile : 'Загрузить аудио / видео файл'}
+            {uploadedFile && isProcessing ? uploadedFile : 'Загрузить аудио / видео файл'}
           </button>
         </div>
       </div>
